@@ -21,29 +21,27 @@ def run_test(func):
         
 if __name__ == "__main__":
     result = []
-    data = pd.read_csv('data/HIGGS.csv', header=None, dtype='float')
-    for count in range(1):
-        print('loop' + str(count))
-        # rdata = data.drop(["# label", "mass"], axis=1)
-        rdata = data.drop([0], axis=1)
+    # data = pd.read_csv('data/HIGGS.csv', header=None, dtype='float')
+    data = pd.read_csv('data/HEPMASS.csv', header=0, dtype='float')
+    for amp in [10]:
+        # print('loop' + str(count))
+        rdata = data.drop(["# label", "mass"], axis=1) # for hepmass
+        # rdata = data.drop([0], axis=1) # for higgs
         rdata.columns = np.arange(0, rdata.shape[1])
         n=rdata.shape[0]
         m=rdata.shape[1]*10
         nodes=[]
         num_workers = 40
         chunk = int(n/num_workers)
-        # with multiprocessing.Pool(processes=num_workers) as pool:
-        #     temp = pool.starmap(to_positive, [(rdata[i],) for i in range(rdata.shape[1])])
-        # rdata = pd.concat(temp, axis=1)
-        # del temp
-        # gc.collect()
+        
+        # partitioning scores to nodes (for varying m, amp is amplification ratio)
         print('gen')
         for k in range(rdata.shape[1]):
             source = rdata[k].values
             with multiprocessing.Pool(processes=num_workers) as pool:
                 datai = pool.starmap(
                     cm.create_data, 
-                    [(source[i*chunk:(i+1)*chunk], 10, 'zipf', np.random.randint(7, 17)/10,) 
+                    [(source[i*chunk:(i+1)*chunk], amp, 'zipf', np.random.randint(7,17)/10,) 
                      for i in range(num_workers)])
             temp = np.concatenate(datai)
             for j in range(10):
@@ -75,9 +73,9 @@ if __name__ == "__main__":
             return mt.evaluate('TPUT '+str(k), nodes, k, output, cct, gs, epsilon=0)
         
         def ktest2(k):
-            output, cct = mt.TPOR(nodes, n, k)
+            output, cct = mt.BSA(nodes, n, k)
             gc.collect()
-            return mt.evaluate('TPOR '+str(k), nodes, k, output, cct, gs, epsilon=0)
+            return mt.evaluate('BDBPA '+str(k), nodes, k, output, cct, gs, epsilon=0)
         
         def ktest3(k):
             output, cct = mt.KLEE(nodes, n, k)
@@ -90,40 +88,51 @@ if __name__ == "__main__":
             return mt.evaluate('BF '+str(k), nodes, k, output, cct, gs, epsilon=0)
         
         def ktest5(k):
-            output, cct = mt.EF(nodes, n, k)
-            gc.collect()
-            return mt.evaluate('EF '+str(k), nodes, k, output, cct, gs, epsilon=0)
-        
-        def ktest6(k):
-            output, cct = mt.VEF(nodes, n, k)
-            gc.collect()
-            return mt.evaluate('VEF '+str(k), nodes, k, output, cct, gs, epsilon=0)
-        
-        def ktest7(k):
             output, cct = mt.VPF(nodes, n, k)
             gc.collect()
             return mt.evaluate('VPF '+str(k), nodes, k, output, cct, gs, epsilon=0)
         
-        def ktest8(k):
+        def ktest6(k):
             output, cct = mt.PF(nodes, n, k)
             gc.collect()
-            return mt.evaluate('PF '+str(k), nodes, k, output, cct, gs, epsilon=0)
+            return mt.evaluate('PFT '+str(k), nodes, k, output, cct, gs, epsilon=0)
         
+        def ktest7(k):
+            output, cct = mt.PPF(nodes, n, k)
+            gc.collect()
+            return mt.evaluate('PPF ' +str(k), nodes, k, output, cct, gs, epsilon=0)
         
         K = [20, 40, 60, 80, 100]
-        for count in range(30):
-            with multiprocessing.Pool(processes=num_workers) as pool:
-                result1 = pool.starmap(ktest1, [(k,) for k in K])
-                result2 = pool.starmap(ktest2, [(k,) for k in K])
-                result3 = pool.starmap(ktest3, [(k,) for k in K])
-                result4 = pool.starmap(ktest4, [(k,) for k in K])
-                result5 = pool.starmap(ktest5, [(k,) for k in K])
-                result6 = pool.starmap(ktest6, [(k,) for k in K])
-                result7 = pool.starmap(ktest7, [(k,) for k in K])
         
-            result=result+result1+result2+result3+result4+result5+result6+result7
+        for k in K:
+            result.append(ktest1(k))
+            result.append(ktest2(k))
+            for i in range(10):
+                result.append(ktest3(k))
+                result.append(ktest4(k))
+                result.append(ktest5(k))
+                result.append(ktest6(k))
+                result.append(ktest7(k))
+        
+        k=100
+        def dtest5(d):
+            output, cct = mt.VPF(nodes, n, k, a=1, delta=d)
             gc.collect()
-
-            
-       
-
+            return mt.evaluate('VPF '+str(d), nodes, k, output, cct, gs, epsilon=0)
+        
+        def dtest6(d):
+            output, cct = mt.PF(nodes, n, k, a=1, delta=d)
+            gc.collect()
+            return mt.evaluate('PFT '+str(d), nodes, k, output, cct, gs, epsilon=0)
+        
+        def dtest7(d):
+            output, cct = mt.PPF(nodes, n, k, delta=d)
+            gc.collect()
+            return mt.evaluate('PPF ' +str(d), nodes, k, output, cct, gs, epsilon=0)
+        
+        D = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5]
+        for delta in D:
+            for i in range(10):
+                result.append(dtest5(delta))
+                result.append(dtest6(delta))
+                result.append(dtest7(delta))

@@ -86,6 +86,15 @@ def Pois_filter(data, index, lbda):
     sample = np.random.poisson(data*lbda)
     return index[sample>0], sample[sample>0]
 
+def solve_lambda(delta, alpha):
+    alpha1 = scipy.special.gammaincinv(alpha, 1-delta/2)+1e-5
+    a0 = np.ceil(2*alpha1)
+    a1 = np.ceil(alpha1/scipy.special.gammaincinv(a0, delta/2)*a0)
+    while np.abs(a1-a0) > 1:
+        a0=a1
+        a1 = np.ceil(alpha1/scipy.special.gammaincinv(a0, delta/2)*a0)
+    return max(a0, a1)
+
 def evaluate(alg, nodes, k, output, cct, gs, centernet = 10e9, epsilon=0, refresh=True):
     """
     Evaluating the result
@@ -250,7 +259,7 @@ def KLEE(nodes, n, k, a=1): # value + popular filter
     for i in range(len(nodes)):
         popular += message2[i]
     R = np.partition(popular, -k)[-k]
-    popular = popular >= int(R*2/3)
+    popular = popular >= int(R*0.8)
     end=time.time()
     cct[nodes[0].nbrounds]=end-start
     
@@ -353,7 +362,6 @@ def TPOR(nodes, n, k):
     final = np.where(best>tau2)[0]
     end=time.time()
     cct[nodes[0].nbrounds]=end-start
-
     # phase 3
     message3=[]
     for i in range(len(nodes)):
@@ -375,8 +383,73 @@ def TPOR(nodes, n, k):
     end=time.time()
     cct[nodes[0].nbrounds]=end-start
     
-    return collected, cct                
+    return collected, cct   
+
+def BSA(nodes, n, k, strategy = 'exponential'):
+    temp_score = np.zeros(n)
+    cct = {}
+    start_curs = 0
+    end_curs = k
+    loopcont = True
+    while loopcont:
+        message = []
+        threshold = 0
+        for i in range(len(nodes)):
+            nodes[i].nbrounds += 1
+            nodes[i].received_message[nodes[i].nbrounds] = 1
+            start = time.time()
+            ind = nodes[i].dindex[start_curs:end_curs]
+            dat = nodes[i].darray[start_curs:end_curs]
+            try:
+                threshold+=nodes[i].darray[end_curs-1]
+            except IndexError:
+                threshold+=0
+            end=time.time()
+            message.append([ind, dat])
+            nodes[i].compute_time[nodes[i].nbrounds] = end-start
+            nodes[i].ID_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].score_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].res_bw += len(ind)*8 + len(ind)*8
+        start = time.time()
+        for i in range(len(nodes)):
+            temp_score[message[i][0]] += message[i][1]
+        current_topk = np.partition(temp_score, -k)[-k]
+        loopcont = (current_topk < threshold) and (end_curs < n)
+        start_curs = end_curs
+        if strategy == 'linear':
+            end_curs += k
+        if strategy == 'exponential':
+            end_curs = min(n, end_curs*2)
+        end = time.time()
+        cct[nodes[0].nbrounds]=end-start
+    start = time.time()
+    final = np.where(temp_score >= threshold)[0]
+    end = time.time()
+    cct[nodes[0].nbrounds]+=end-start
     
+    # phase 3
+    message3=[]
+    for i in range(len(nodes)):
+        nodes[i].nbrounds += 1
+        nodes[i].received_message[nodes[i].nbrounds] = len(final)*8
+        start=time.time()
+        ind = np.where(np.isin(nodes[i].dindex[start_curs:], final))[0]            
+        message3.append([nodes[i].dindex[start_curs:][ind], nodes[i].darray[start_curs:][ind]])
+        end=time.time()
+        nodes[i].compute_time[nodes[i].nbrounds] = end-start
+        nodes[i].ID_sent[nodes[i].nbrounds] = len(ind)
+        nodes[i].score_sent[nodes[i].nbrounds] = len(ind)
+        nodes[i].val_bw += len(ind)*8 + len(ind)*8
+    start=time.time()
+    for i in range(len(nodes)):
+        temp_score[message3[i][0]]+=message3[i][1]
+    temp = np.argsort(temp_score)[::-1][:k]
+    collected = pd.Series(temp_score[temp], temp)
+    end=time.time()
+    cct[nodes[0].nbrounds]=end-start
+    
+    return collected, cct
+       
 def BF(nodes, n, k, delta = 0.1):
     # phase 1
     temp_score = np.zeros(n)
@@ -523,7 +596,7 @@ def PF(nodes, n, k, a=1, delta = 0.1):
     for i in range(len(nodes)):
         temp_score[message[i][0]]+=message[i][1]
     tau1=np.partition(temp_score, -k)[-k]
-    lbda = 10/tau1
+    lbda = (solve_lambda(delta, 1)+1)/tau1
     end=time.time()
     cct[nodes[0].nbrounds]=end-start
     
@@ -668,10 +741,9 @@ def VEF(nodes, n, k, a=1, delta = 0.1):
     end=time.time()
     cct[nodes[0].nbrounds]=end-start
     
-    return collected, cct     
+    return collected, cct 
 
-def VPF(nodes, n, k, a=1, delta = 0.1):
-    
+def PPF(nodes, n, k, delta = 0.1, strategy = 'exponential'):
     # phase 1
     temp_score = np.zeros(n)
     estimate_score = np.zeros(n)
@@ -692,7 +764,97 @@ def VPF(nodes, n, k, a=1, delta = 0.1):
     for i in range(len(nodes)):
         temp_score[message[i][0]]+=message[i][1]
     tau1=np.partition(temp_score, -k)[-k]
-    lbda = 10/tau1
+    lbda = (solve_lambda(delta, 1)+1)/tau1
+    end=time.time()
+    cct[nodes[0].nbrounds]=end-start
+    
+    # phase 2
+    start_curs = 0
+    end_curs = 2*k
+    loopcont = True
+    while loopcont:
+        message2 = []
+        threshold = 0
+        for i in range(len(nodes)):
+            nodes[i].nbrounds += 1
+            nodes[i].received_message[nodes[i].nbrounds] = 1
+            start = time.time()
+            ind, samp = Pois_filter(nodes[i].darray[start_curs:end_curs], nodes[i].dindex[start_curs:end_curs], lbda)
+            try:
+                threshold+=nodes[i].darray[end_curs-1]
+            except IndexError:
+                threshold+=0
+            end=time.time()
+            message2.append([ind, samp])
+            nodes[i].compute_time[nodes[i].nbrounds] = end-start
+            nodes[i].ID_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].extended[nodes[i].nbrounds] = len(ind)*4
+            nodes[i].res_bw += len(ind)*8 + len(ind)*4
+        start = time.time()
+        for i in range(len(nodes)):
+            estimate_score[message2[i][0]] += message2[i][1]
+        rk = np.partition(estimate_score, -k)[-k]
+        alpha1 = scipy.special.gammaincinv(rk, delta/2)
+        loopcont = (alpha1/lbda < threshold) and (end_curs < n)
+        start_curs = end_curs
+        if strategy == 'linear':
+            end_curs += k
+        if strategy == 'exponential':
+            end_curs = min(n, end_curs*2)
+        end = time.time()
+        cct[nodes[0].nbrounds]=end-start
+    start = time.time()
+    alpha2 = scipy.stats.poisson.ppf(delta/2, alpha1)
+    alpha = max(alpha2, scipy.stats.poisson.ppf(delta, lbda*tau1))
+    final = np.where(estimate_score > alpha)[0]
+    end = time.time()
+    cct[nodes[0].nbrounds]+=end-start
+    
+    # phase 3
+    message3=[]
+    for i in range(len(nodes)):
+        nodes[i].nbrounds += 1
+        nodes[i].received_message[nodes[i].nbrounds] = len(final)*8
+        start=time.time()
+        ind = np.where(np.isin(nodes[i].dindex[k:], final))[0]            
+        message3.append([nodes[i].dindex[k:][ind], nodes[i].darray[k:][ind]])
+        end=time.time()
+        nodes[i].compute_time[nodes[i].nbrounds] = end-start
+        nodes[i].ID_sent[nodes[i].nbrounds] = len(ind)
+        nodes[i].score_sent[nodes[i].nbrounds] = len(ind)
+        nodes[i].val_bw += len(ind)*8 + len(ind)*8
+    start=time.time()
+    for i in range(len(nodes)):
+        temp_score[message3[i][0]]+=message3[i][1]
+    temp = np.argsort(temp_score)[::-1][:k]
+    collected = pd.Series(temp_score[temp], temp)
+    end=time.time()
+    cct[nodes[0].nbrounds]=end-start
+    
+    return collected, cct
+
+def VPF(nodes, n, k, a=1, delta = 0.1):
+    # phase 1
+    temp_score = np.zeros(n)
+    estimate_score = np.zeros(n)
+    cct = {} # center computing time
+    message = []
+    for i in range(len(nodes)):
+        nodes[i].nbrounds += 1
+        nodes[i].received_message[nodes[i].nbrounds] = 2 # broadcast k and a flag indicate the query started
+        start = time.time()
+        considered = [nodes[i].dindex[:k], nodes[i].darray[:k]]
+        end=time.time()
+        message.append(considered)
+        nodes[i].compute_time[nodes[i].nbrounds] = end-start
+        nodes[i].ID_sent[nodes[i].nbrounds] = len(considered[0])
+        nodes[i].score_sent[nodes[i].nbrounds] = len(considered[0])
+        nodes[i].res_bw += len(considered[0])*8 + len(considered[0])*8
+    start = time.time()
+    for i in range(len(nodes)):
+        temp_score[message[i][0]]+=message[i][1]
+    tau1=np.partition(temp_score, -k)[-k]
+    lbda = (solve_lambda(delta, 1)+1)/tau1
     end=time.time()
     cct[nodes[0].nbrounds]=end-start
     
