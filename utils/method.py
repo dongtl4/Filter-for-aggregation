@@ -811,25 +811,70 @@ def PPF(nodes, n, k, delta = 0.1, strategy = 'exponential'):
     cct[nodes[0].nbrounds]+=end-start
     
     # phase 3
-    message3=[]
-    for i in range(len(nodes)):
-        nodes[i].nbrounds += 1
-        nodes[i].received_message[nodes[i].nbrounds] = len(final)*8
+    if(len(final) < n/100):
+        message3=[]
+        for i in range(len(nodes)):
+            nodes[i].nbrounds += 1
+            nodes[i].received_message[nodes[i].nbrounds] = len(final)*8
+            start=time.time()
+            ind = np.where(np.isin(nodes[i].dindex[k:], final))[0]            
+            message3.append([nodes[i].dindex[k:][ind], nodes[i].darray[k:][ind]])
+            end=time.time()
+            nodes[i].compute_time[nodes[i].nbrounds] = end-start
+            nodes[i].ID_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].score_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].val_bw += len(ind)*8 + len(ind)*8
         start=time.time()
-        ind = np.where(np.isin(nodes[i].dindex[k:], final))[0]            
-        message3.append([nodes[i].dindex[k:][ind], nodes[i].darray[k:][ind]])
+        for i in range(len(nodes)):
+            temp_score[message3[i][0]]+=message3[i][1]
+        temp = np.argsort(temp_score)[::-1][:k]
+        collected = pd.Series(temp_score[temp], temp)
         end=time.time()
-        nodes[i].compute_time[nodes[i].nbrounds] = end-start
-        nodes[i].ID_sent[nodes[i].nbrounds] = len(ind)
-        nodes[i].score_sent[nodes[i].nbrounds] = len(ind)
-        nodes[i].val_bw += len(ind)*8 + len(ind)*8
-    start=time.time()
-    for i in range(len(nodes)):
-        temp_score[message3[i][0]]+=message3[i][1]
-    temp = np.argsort(temp_score)[::-1][:k]
-    collected = pd.Series(temp_score[temp], temp)
-    end=time.time()
-    cct[nodes[0].nbrounds]=end-start
+        cct[nodes[0].nbrounds]=end-start
+    else:
+        message3=[]
+        for i in range(len(nodes)):
+            nodes[i].nbrounds += 1
+            nodes[i].received_message[nodes[i].nbrounds] = len(final)*8
+            start=time.time()
+            ind = np.where(np.isin(nodes[i].dindex[k:start_curs], final))[0]            
+            message3.append([nodes[i].dindex[k:start_curs][ind], nodes[i].darray[k:start_curs][ind]])
+            end=time.time()
+            nodes[i].compute_time[nodes[i].nbrounds] = end-start
+            nodes[i].ID_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].score_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].val_bw += len(ind)*8 + len(ind)*8
+        miss = np.ones(n)*tau1
+        start=time.time()
+        for i in range(len(nodes)):
+            temp_score[message3[i][0]]+=message3[i][1]
+            miss[message[i][0]]-=nodes[i].darray[start_curs]
+            miss[message3[i][0]]-=nodes[i].darray[start_curs]
+        tau2 = np.partition(temp_score, -k)[-k]
+        best = temp_score + miss +1e-5
+        final2 = np.where(best>tau2)[0]
+        end=time.time()
+        cct[nodes[0].nbrounds]=end-start
+        
+        message4=[]
+        for i in range(len(nodes)):
+            nodes[i].nbrounds += 1
+            nodes[i].received_message[nodes[i].nbrounds] = len(final2)*8
+            start=time.time()
+            ind = np.where(np.isin(nodes[i].dindex[start_curs:], final2))[0]            
+            message4.append([nodes[i].dindex[start_curs:][ind], nodes[i].darray[start_curs:][ind]])
+            end=time.time()
+            nodes[i].compute_time[nodes[i].nbrounds] = end-start
+            nodes[i].ID_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].score_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].val_bw += len(ind)*8 + len(ind)*8
+        start=time.time()
+        for i in range(len(nodes)):
+            temp_score[message4[i][0]]+=message4[i][1]
+        temp = np.argsort(temp_score)[::-1][:k]
+        collected = pd.Series(temp_score[temp], temp)
+        end=time.time()
+        cct[nodes[0].nbrounds]=end-start
     
     return collected, cct
 
@@ -886,24 +931,69 @@ def VPF(nodes, n, k, a=1, delta = 0.1):
     cct[nodes[0].nbrounds]=end-start
     
     # phase 3
-    message3=[]
-    for i in range(len(nodes)):
-        nodes[i].nbrounds += 1
-        nodes[i].received_message[nodes[i].nbrounds] = len(final)*8
+    if(len(final) < n/100):
+        message3=[]
+        for i in range(len(nodes)):
+            nodes[i].nbrounds += 1
+            nodes[i].received_message[nodes[i].nbrounds] = len(final)*8
+            start=time.time()
+            ind = np.where(np.isin(nodes[i].dindex[k:], final))[0]            
+            message3.append([nodes[i].dindex[k:][ind], nodes[i].darray[k:][ind]])
+            end=time.time()
+            nodes[i].compute_time[nodes[i].nbrounds] = end-start
+            nodes[i].ID_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].score_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].val_bw += len(ind)*8 + len(ind)*8
         start=time.time()
-        ind = np.where(np.isin(nodes[i].dindex[k:], final))[0]            
-        message3.append([nodes[i].dindex[k:][ind], nodes[i].darray[k:][ind]])
+        for i in range(len(nodes)):
+            temp_score[message3[i][0]]+=message3[i][1]
+        temp = np.argsort(temp_score)[::-1][:k]
+        collected = pd.Series(temp_score[temp], temp)
         end=time.time()
-        nodes[i].compute_time[nodes[i].nbrounds] = end-start
-        nodes[i].ID_sent[nodes[i].nbrounds] = len(ind)
-        nodes[i].score_sent[nodes[i].nbrounds] = len(ind)
-        nodes[i].val_bw += len(ind)*8 + len(ind)*8
-    start=time.time()
-    for i in range(len(nodes)):
-        temp_score[message3[i][0]]+=message3[i][1]
-    temp = np.argsort(temp_score)[::-1][:k]
-    collected = pd.Series(temp_score[temp], temp)
-    end=time.time()
-    cct[nodes[0].nbrounds]=end-start
-    
+        cct[nodes[0].nbrounds]=end-start
+    else:
+        message3=[]
+        for i in range(len(nodes)):
+            nodes[i].nbrounds += 1
+            nodes[i].received_message[nodes[i].nbrounds] = len(final)*8
+            start=time.time()
+            ind = np.where(np.isin(nodes[i].dindex[k:nodes[i].cursor], final))[0]            
+            message3.append([nodes[i].dindex[k:nodes[i].cursor][ind], nodes[i].darray[k:nodes[i].cursor][ind]])
+            end=time.time()
+            nodes[i].compute_time[nodes[i].nbrounds] = end-start
+            nodes[i].ID_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].score_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].val_bw += len(ind)*8 + len(ind)*8
+        miss = np.ones(n)*tau1
+        start=time.time()
+        for i in range(len(nodes)):
+            temp_score[message3[i][0]]+=message3[i][1]
+            miss[message[i][0]]-=nodes[i].threshold
+            miss[message3[i][0]]-=nodes[i].threshold
+        tau2 = np.partition(temp_score, -k)[-k]
+        best = temp_score + miss +1e-5
+        final2 = np.where(best>tau2)[0]
+        end=time.time()
+        cct[nodes[0].nbrounds]=end-start
+        
+        message4=[]
+        for i in range(len(nodes)):
+            nodes[i].nbrounds += 1
+            nodes[i].received_message[nodes[i].nbrounds] = len(final2)*8
+            start=time.time()
+            ind = np.where(np.isin(nodes[i].dindex[nodes[i].cursor:], final2))[0]            
+            message4.append([nodes[i].dindex[nodes[i].cursor:][ind], nodes[i].darray[nodes[i].cursor:][ind]])
+            end=time.time()
+            nodes[i].compute_time[nodes[i].nbrounds] = end-start
+            nodes[i].ID_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].score_sent[nodes[i].nbrounds] = len(ind)
+            nodes[i].val_bw += len(ind)*8 + len(ind)*8
+        start=time.time()
+        for i in range(len(nodes)):
+            temp_score[message4[i][0]]+=message4[i][1]
+        temp = np.argsort(temp_score)[::-1][:k]
+        collected = pd.Series(temp_score[temp], temp)
+        end=time.time()
+        cct[nodes[0].nbrounds]=end-start
+        
     return collected, cct 
